@@ -61,11 +61,7 @@ def generate_quick_asks(semantics: list[ColumnSemantics], row_count: int) -> lis
     dims = _rank_dimensions(semantics)
     dates = [s for s in semantics if s.analytical_role == AnalyticalRole.datetime_dimension]
     rankable = sorted(
-        (
-            s
-            for s in semantics
-            if s.analytical_role in CATEGORY_ROLES and MIN_RANK_MEMBERS <= s.distinct_count <= 500
-        ),
+        (s for s in semantics if s.analytical_role in CATEGORY_ROLES and MIN_RANK_MEMBERS <= s.distinct_count <= 500),
         key=lambda s: (-s.distinct_count, s.position),
     )
     entity = _entity(semantics)
@@ -355,8 +351,18 @@ def _driver_target(semantics: list[ColumnSemantics], measures: list[ColumnSemant
         name = column.name.lower()
         outcome_word = any(
             word in name
-            for word in ("churn", "attrition", "default", "fraud", "conversion", "converted", "retained", "segment",
-                         "outcome", "target")
+            for word in (
+                "churn",
+                "attrition",
+                "default",
+                "fraud",
+                "conversion",
+                "converted",
+                "retained",
+                "segment",
+                "outcome",
+                "target",
+            )
         )
         usable = column.analytical_role in CATEGORY_ROLES | NUMERIC_ROLES and column.distinct_count >= 2
         if outcome_word and usable:

@@ -18,6 +18,7 @@ __pycache__/
 .ipynb_checkpoints/
 dist/
 build/
+*.tsbuildinfo
 
 # OS and editor clutter
 Thumbs.db
