@@ -1,0 +1,25 @@
+# Secrets - never push
+.env
+.env.*
+*.pem
+*.key
+
+# Folders we're not pushing
+/Architecture/
+
+# Dependencies and caches (these can be rebuilt, and some are huge)
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+dist/
+build/
+
+# OS and editor clutter
+Thumbs.db
+.DS_Store
+*.log

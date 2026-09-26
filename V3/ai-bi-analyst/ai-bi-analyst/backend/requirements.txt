@@ -1,0 +1,18 @@
+# Runtime. Pinned exactly so a build is reproducible, and audited with
+# `pip-audit -r requirements.txt` (see SECURITY.md). Bump deliberately.
+fastapi==0.141.1
+starlette==1.6.0
+uvicorn[standard]==0.53.0
+pydantic==2.13.5
+python-multipart==0.0.32
+httpx==0.28.1
+
+# Analysis
+pandas==2.3.3
+numpy==2.3.4
+scipy==1.16.2
+scikit-learn==1.7.2
+duckdb==1.4.2
+pyarrow==25.0.1
+openpyxl==3.1.5
+charset-normalizer==3.4.4

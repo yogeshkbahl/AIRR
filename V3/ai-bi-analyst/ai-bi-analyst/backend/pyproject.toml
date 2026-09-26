@@ -1,0 +1,35 @@
+[project]
+name = "ai-bi-analyst-backend"
+version = "1.3.0"
+description = "Governed EDA and BI recommendation service: Python computes, the model interprets."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# `S` is the bandit ruleset: it is what turns `ruff check` into a security gate.
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "S"]
+# B008: FastAPI's Depends/File/Form defaults are the documented style.
+# SIM108: a ternary is not always clearer than a short if/else.
+# UP042: `str, Enum` is kept deliberately for stable Pydantic serialisation.
+ignore = ["B008", "SIM108", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, use fixtures with predictable values, and deliberately feed
+# injection strings as data; none of that is a finding.
+"tests/*" = ["S101", "S105", "S106", "S108", "S311"]
+# These files embed CSS and prompt templates verbatim; wrapping a line there
+# would change the rendered export or the prompt text itself.
+"app/core/export.py" = ["E501"]
+"app/llm/prompts.py" = ["E501"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["*/tests/*"]

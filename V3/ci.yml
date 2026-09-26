@@ -1,0 +1,107 @@
+name: ci
+
+# Every gate that has to be green before a change ships. Each job fails the
+# build on its own, so a dependency advisory cannot be merged past silently.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Advisories appear without anyone touching the code, so the audit jobs run
+    # weekly against the pinned dependency set as well as on every change.
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Lint, including the bandit security ruleset
+        run: ruff check app tests
+      - name: Formatting
+        run: ruff format --check app tests
+      - name: Tests
+        run: pytest -q
+      - name: Dependency audit
+        # Fails on any known advisory in the pinned runtime set.
+        run: pip-audit -r requirements.txt --strict --progress-spinner off
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install from the lockfile only
+        run: npm ci
+      - name: Types
+        run: npm run typecheck
+      - name: Tests
+        run: npm run test
+      - name: Build
+        run: npm run build
+      - name: Dependency audit
+        # Moderate and above fails the build. Runtime-only view first, then the
+        # full tree so a dev-tool advisory is visible without blocking a release.
+        run: |
+          npm audit --omit=dev --audit-level=low
+          npm audit --audit-level=moderate
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the backend image
+        run: docker build -t ai-bi-analyst-backend:ci ./backend
+      - name: Scan the image for OS and library CVEs
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ai-bi-analyst-backend:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan history for committed credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      matrix:
+        language: [python, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3

@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# Quality and security gates. Versions pinned so CI and a laptop agree.
+pytest==8.4.2
+pytest-cov==7.0.0
+ruff==0.14.5
+pip-audit==2.9.0
