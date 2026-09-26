@@ -80,7 +80,8 @@ jobs:
       - name: Build the backend image
         run: docker build -t ai-bi-analyst-backend:ci ./${{ env.APP_DIR }}/backend
       - name: Scan the image for OS and library CVEs
-        uses: aquasecurity/trivy-action@0.28.0
+        # Pinned to the v0.36.0 commit; the old un-prefixed 0.28.0 tag was removed.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ai-bi-analyst-backend:ci
           severity: HIGH,CRITICAL
