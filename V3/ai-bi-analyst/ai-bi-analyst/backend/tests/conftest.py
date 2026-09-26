@@ -11,9 +11,11 @@ import pytest
 WORKSPACE = Path(tempfile.mkdtemp(prefix="bi-tests-"))
 os.environ.setdefault("WORKSPACE_DIR", str(WORKSPACE))
 os.environ.setdefault("METADATA_DB", str(WORKSPACE / "metadata.sqlite"))
-os.environ.setdefault("LLM_PROVIDER", "heuristic")
-os.environ.pop("OPENAI_API_KEY", None)
-os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ["LLM_PROVIDER"] = "heuristic"
+# Empty rather than unset: config loads backend/.env without overriding, so an
+# unset key would be refilled from a developer's real .env.
+os.environ["OPENAI_API_KEY"] = ""
+os.environ["ANTHROPIC_API_KEY"] = ""
 
 
 @pytest.fixture(scope="session")

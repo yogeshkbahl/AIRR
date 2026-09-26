@@ -218,8 +218,10 @@ function Workspace() {
 }
 
 export default function App() {
-  const [provider, setProvider] = useState('heuristic')
+  // Until the user picks one, follow the backend's configured default.
+  const [chosenProvider, setProvider] = useState<string | null>(null)
   const { data, isError } = useQuery({ queryKey: ['health'], queryFn: api.health, staleTime: Infinity })
+  const provider = chosenProvider ?? data?.default_provider ?? 'heuristic'
 
   const value = useMemo<WorkbenchState>(
     () => ({ provider, setProvider, providers: data?.providers ?? [] }),

@@ -27,6 +27,17 @@ def test_health_exposes_providers_without_secrets(client):
     assert body["limits"]["max_upload_mb"] > 0
 
 
+def test_health_default_provider_falls_back_when_the_key_is_missing(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "llm_provider", "anthropic")
+    monkeypatch.setattr(settings, "anthropic_api_key", None)
+    assert client.get("/api/v1/health").json()["default_provider"] == "heuristic"
+
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+    assert client.get("/api/v1/health").json()["default_provider"] == "anthropic"
+
+
 def test_upload_returns_exact_counts(uploaded):
     overview = uploaded["overview"]
     assert overview["row_count"] == 243

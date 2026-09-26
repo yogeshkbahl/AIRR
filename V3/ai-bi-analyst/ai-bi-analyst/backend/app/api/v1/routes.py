@@ -125,6 +125,9 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "app_version": APP_VERSION,
         "providers": available_providers(),
+        # LLM_PROVIDER as resolved: a provider without a server key falls back
+        # to the built-in narrator, so the UI never starts on an unusable choice.
+        "default_provider": get_provider().name,
         "limits": {
             "max_upload_mb": settings.max_upload_mb,
             "profile_row_limit": settings.profile_row_limit,

@@ -6,6 +6,12 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# backend/.env, so a plain `uvicorn app.main:app` picks up the provider keys.
+# Variables already in the environment (Docker env_file, --env-file) win.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
+
 
 def _int(name: str, default: int) -> int:
     try:

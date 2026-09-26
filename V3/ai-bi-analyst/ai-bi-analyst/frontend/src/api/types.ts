@@ -411,6 +411,8 @@ export interface ProviderInfo { id: string; label: string; configured: boolean; 
 export interface HealthResponse {
   status: string
   providers: ProviderInfo[]
+  /** The backend's LLM_PROVIDER, already resolved to a configured provider. */
+  default_provider: string
   limits: {
     max_upload_mb: number; profile_row_limit: number
     query_row_limit: number; session_retention_hours: number
