@@ -6,6 +6,8 @@
 
 # Folders we're not pushing
 /Architecture/
+/V1/
+/V2/
 
 # Dependencies and caches (these can be rebuilt, and some are huge)
 node_modules/
