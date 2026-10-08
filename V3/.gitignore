@@ -1,6 +1,8 @@
 # Secrets - never push
 .env
 .env.*
+# The template holds placeholders only, so teammates can see every setting.
+!.env.example
 *.pem
 *.key
 
