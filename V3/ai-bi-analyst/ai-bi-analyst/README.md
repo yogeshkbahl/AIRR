@@ -18,6 +18,25 @@ Version 1.2.0 adds governed data-quality rules and a paginated dataset preview.
 
 ---
 
+## Run as an app on any machine (Docker)
+
+Needs only [Docker Desktop](https://www.docker.com/products/docker-desktop/). No Python or Node.
+
+1. Copy this folder to the machine.
+2. Start it:
+   - **Windows:** double-click `start-app.bat`
+   - **macOS / Linux:** run `./start-app.sh`
+3. On the first run, pick an AI provider and paste its API key. It is saved to `.env` on that machine
+   only. The first build takes a few minutes; later starts take seconds.
+4. The app opens at <http://localhost:8080>.
+
+Stop it with `stop-app.bat` or `./stop-app.sh`. Uploaded datasets live in the `analyst-data` Docker
+volume and survive restarts. Per-request debug logs are written to `logs/queries/<date>/`.
+Set `APP_PORT` in `.env` to use a port other than 8080.
+
+This uses `docker-compose.app.yml`: the code is built into the images and nginx serves the built
+frontend and proxies `/api` to the backend. `docker-compose.yml` below is the development setup.
+
 ## Quick start
 
 Two terminals, no Docker, no API key.
