@@ -11,6 +11,7 @@ import pytest
 WORKSPACE = Path(tempfile.mkdtemp(prefix="bi-tests-"))
 os.environ.setdefault("WORKSPACE_DIR", str(WORKSPACE))
 os.environ.setdefault("METADATA_DB", str(WORKSPACE / "metadata.sqlite"))
+os.environ.setdefault("QUERY_LOG_DIR", str(WORKSPACE / "query-logs"))
 os.environ["LLM_PROVIDER"] = "heuristic"
 # Empty rather than unset: config loads backend/.env without overriding, so an
 # unset key would be refilled from a developer's real .env.

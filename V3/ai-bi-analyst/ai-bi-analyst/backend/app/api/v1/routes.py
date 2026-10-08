@@ -40,6 +40,7 @@ from ...core.quality_rules import (
     suggest_rules,
     validate_rules,
 )
+from ...core.query_log import logged, result_summary
 from ...core.query_plan import PlanError, chart_data, execute_plan
 from ...core.quick_asks import driver_result, plan_for_intent
 from ...core.relationships import build_matrix, pair_detail
@@ -611,84 +612,97 @@ def chart_advice(
     duplicates collapsed, and the response echoes the dataset id plus the
     selection fingerprint so the client can discard a superseded answer.
     """
-    session = _session(dataset_id, request)
-    column_ids, dropped, truncated = canonical_selection(body.columns, session.semantics)
-    if not column_ids:
-        raise _fail(
-            400,
-            "unknown_column",
-            f"None of these columns exist in this dataset: {', '.join(dropped[:5])}.",
-            request,
-        )
-
-    fingerprint = build_fingerprint(dataset_id, column_ids)
-    if body.selection_fingerprint and body.selection_fingerprint != fingerprint:
-        # Not an error: the client asked about a selection that resolves
-        # differently server-side. The echoed fingerprint lets it decide.
-        pass
-
-    selection = build_selection(session.semantics, column_ids, session.overview.analyzed_row_count)
-    compatible, rejected = evaluate_selection(selection)
-
-    llm_used, note = False, None
-    if body.use_llm and compatible:
-        service = _service(provider, dataset_id)
-        compatible, llm_used, note = service.rank_charts(
-            selection=selection, options=compatible, semantics=session.semantics, question=body.question
-        )
-        if llm_used:
-            store.audit(
-                AuditRecord(
-                    dataset_id=dataset_id,
-                    at=datetime.now(UTC),
-                    action="chart_advice",
-                    provider=service.provider_name,
-                    model=service.provider.model,
-                    prompt_version="chart_ranking@1.3",
-                    detail=f"selection {fingerprint}",
-                )
+    with logged("chart_advice", dataset_id, request) as qlog:
+        qlog.set(request_body=body, provider=provider)
+        session = _session(dataset_id, request)
+        column_ids, dropped, truncated = canonical_selection(body.columns, session.semantics)
+        qlog.set(selected_columns=column_ids, dropped_columns=dropped, truncated=truncated)
+        if not column_ids:
+            raise _fail(
+                400,
+                "unknown_column",
+                f"None of these columns exist in this dataset: {', '.join(dropped[:5])}.",
+                request,
             )
-        store.save_usage(dataset_id)
 
-    notes: list[str] = []
-    if dropped:
-        notes.append(
-            f"{len(dropped)} selected column(s) are not in this dataset and were ignored: {', '.join(dropped[:3])}."
+        fingerprint = build_fingerprint(dataset_id, column_ids)
+        if body.selection_fingerprint and body.selection_fingerprint != fingerprint:
+            # Not an error: the client asked about a selection that resolves
+            # differently server-side. The echoed fingerprint lets it decide.
+            pass
+
+        selection = build_selection(session.semantics, column_ids, session.overview.analyzed_row_count)
+        compatible, rejected = evaluate_selection(selection)
+        qlog.set(rule_compatible=[o.chart_type for o in compatible], rule_rejected=[o.chart_type for o in rejected])
+
+        llm_used, note = False, None
+        if body.use_llm and compatible:
+            service = _service(provider, dataset_id)
+            compatible, llm_used, note = service.rank_charts(
+                selection=selection, options=compatible, semantics=session.semantics, question=body.question
+            )
+            if llm_used:
+                store.audit(
+                    AuditRecord(
+                        dataset_id=dataset_id,
+                        at=datetime.now(UTC),
+                        action="chart_advice",
+                        provider=service.provider_name,
+                        model=service.provider.model,
+                        prompt_version="chart_ranking@1.3",
+                        detail=f"selection {fingerprint}",
+                    )
+                )
+            store.save_usage(dataset_id)
+
+        qlog.set(
+            llm_used=llm_used,
+            llm_note=note,
+            ranked=[{"chart_type": o.chart_type, "rationale": o.rationale} for o in compatible],
         )
-    if truncated:
-        notes.append("Only the first 8 selected columns were evaluated.")
-    if note:
-        notes.append(note)
+        notes: list[str] = []
+        if dropped:
+            notes.append(
+                f"{len(dropped)} selected column(s) are not in this dataset and were ignored: {', '.join(dropped[:3])}."
+            )
+        if truncated:
+            notes.append("Only the first 8 selected columns were evaluated.")
+        if note:
+            notes.append(note)
 
-    return ChartAdviceResponse(
-        selected_columns=column_ids,
-        selection_summary=selection.summary(),
-        options=compatible,
-        rejected=rejected,
-        llm_used=llm_used,
-        llm_note=" ".join(notes) or None,
-        dataset_id=dataset_id,
-        selection_fingerprint=fingerprint,
-        request_id=getattr(request.state, "request_id", ""),
-        dropped_columns=dropped,
-        truncated_selection=truncated,
-    )
+        return ChartAdviceResponse(
+            selected_columns=column_ids,
+            selection_summary=selection.summary(),
+            options=compatible,
+            rejected=rejected,
+            llm_used=llm_used,
+            llm_note=" ".join(notes) or None,
+            dataset_id=dataset_id,
+            selection_fingerprint=fingerprint,
+            request_id=getattr(request.state, "request_id", ""),
+            dropped_columns=dropped,
+            truncated_selection=truncated,
+        )
 
 
 @router.post("/datasets/{dataset_id}/chart-data", response_model=ChartData)
 def chart_dataset(dataset_id: str, request: Request, spec: ChartSpec) -> ChartData:
-    session = _session(dataset_id, request)
-    ok, problems = validate_chart_spec(spec, session.semantics, session.overview.analyzed_row_count)
-    if not ok:
-        repaired, notes = repair_chart_spec(spec, session.semantics, session.overview.analyzed_row_count)
-        if repaired is None:
-            raise _fail(400, "invalid_chart_spec", " ".join(problems + notes), request)
-        spec = repaired
-    try:
-        cols, rows, truncated = chart_data(session.df, spec, session.semantics)
-    except PlanError as exc:
-        raise _fail(400, "chart_data_failed", str(exc), request) from exc
-    return ChartData(spec=spec, columns=cols, rows=rows, row_count=len(rows), truncated=truncated)
+    with logged("chart_data", dataset_id, request) as qlog:
+        qlog.set(spec=spec)
+        session = _session(dataset_id, request)
+        ok, problems = validate_chart_spec(spec, session.semantics, session.overview.analyzed_row_count)
+        if not ok:
+            repaired, notes = repair_chart_spec(spec, session.semantics, session.overview.analyzed_row_count)
+            if repaired is None:
+                raise _fail(400, "invalid_chart_spec", " ".join(problems + notes), request)
+            spec = repaired
+            qlog.set(validation_problems=problems, repair_notes=notes, repaired_spec=spec)
+        try:
+            cols, rows, truncated = chart_data(session.df, spec, session.semantics)
+        except PlanError as exc:
+            raise _fail(400, "chart_data_failed", str(exc), request) from exc
+        qlog.set(columns=cols, row_count=len(rows), truncated=truncated)
+        return ChartData(spec=spec, columns=cols, rows=rows, row_count=len(rows), truncated=truncated)
 
 
 # --------------------------------------------------------------------------- #
@@ -717,106 +731,127 @@ def quick_asks(dataset_id: str, request: Request) -> QuickAskList:
 def ask_question(
     dataset_id: str, request: Request, body: QuestionRequest, provider: str | None = Query(None)
 ) -> QuestionResponse:
-    session = _session(dataset_id, request)
-    service = _service(provider, dataset_id)
+    with logged("question", dataset_id, request) as qlog:
+        qlog.set(request_body=body)
+        session = _session(dataset_id, request)
+        service = _service(provider, dataset_id)
+        qlog.set(provider=service.provider_name, model=service.provider.model)
 
-    quick_ask: QuickAsk | None = None
-    if body.quick_ask_id:
-        quick_ask = next((q for q in session.quick_asks if q.id == body.quick_ask_id), None)
-        if quick_ask is None:
-            raise _fail(
-                400,
-                "unknown_quick_ask",
-                "That suggestion is not available for this dataset. Refresh the suggestions and try again.",
-                request,
-            )
+        quick_ask: QuickAsk | None = None
+        if body.quick_ask_id:
+            quick_ask = next((q for q in session.quick_asks if q.id == body.quick_ask_id), None)
+            if quick_ask is None:
+                raise _fail(
+                    400,
+                    "unknown_quick_ask",
+                    "That suggestion is not available for this dataset. Refresh the suggestions and try again.",
+                    request,
+                )
 
-    result: PlanResult | None = None
-    llm_planned, plan_note = False, None
+        result: PlanResult | None = None
+        llm_planned, plan_note = False, None
 
-    if quick_ask is not None and quick_ask.intent.kind == "drivers":
-        # Driver questions are answered by the association engine rather than by
-        # an aggregate query, and the result says so explicitly.
-        try:
-            result = driver_result(
-                session.df, session.semantics, quick_ask.intent.target_column or "", quick_ask.intent.limit
-            )
-            plan = result.plan
-        except KeyError:
-            raise _fail(
-                400,
-                "unknown_column",
-                "The target column for that suggestion is no longer in this dataset.",
-                request,
-            ) from None
-    else:
-        if quick_ask is not None:
-            plan = plan_for_intent(quick_ask.intent, quick_ask.question)
-        else:
-            plan, llm_planned, plan_note = service.plan_for_question(body.question, session.semantics, body.columns)
-        if not plan.clarification_needed:
+        if quick_ask is not None and quick_ask.intent.kind == "drivers":
+            # Driver questions are answered by the association engine rather than by
+            # an aggregate query, and the result says so explicitly.
             try:
-                result = execute_plan(session.df, plan, session.semantics)
+                result = driver_result(
+                    session.df, session.semantics, quick_ask.intent.target_column or "", quick_ask.intent.limit
+                )
                 plan = result.plan
-            except PlanError as exc:
-                plan = plan.model_copy(update={"clarification_needed": str(exc)})
+            except KeyError:
+                raise _fail(
+                    400,
+                    "unknown_column",
+                    "The target column for that suggestion is no longer in this dataset.",
+                    request,
+                ) from None
+        else:
+            if quick_ask is not None:
+                plan = plan_for_intent(quick_ask.intent, quick_ask.question)
+            else:
+                plan, llm_planned, plan_note = service.plan_for_question(
+                    body.question, session.semantics, body.columns, session.overview.analyzed_row_count
+                )
+            qlog.set(planned_by="quick_ask" if quick_ask else ("llm" if llm_planned else "rules"), proposed_plan=plan)
+            if not plan.clarification_needed:
+                try:
+                    result = execute_plan(session.df, plan, session.semantics)
+                    plan = result.plan
+                except PlanError as exc:
+                    qlog.set(plan_error={"message": str(exc), "detail": exc.detail, "sql": exc.sql})
+                    plan = plan.model_copy(update={"clarification_needed": str(exc)})
 
-    answer, llm_answered, prompt_ref = service.answer(
-        question=body.question, result=result, anomalies=session.anomalies
-    )
-    if plan_note:
-        answer.caveats.append(plan_note)
-    if plan.clarification_needed:
-        answer.caveats.append(f"Clarification needed: {plan.clarification_needed}")
-
-    chart = None
-    if result is not None and result.rows and (quick_ask is None or quick_ask.intent.kind != "drivers"):
-        from ...core.query_plan import chart_for_plan
-
-        chart = chart_for_plan(plan, session.semantics)
-
-    state: str = "answered"
-    if plan.clarification_needed:
-        state = "clarification_required"
-    elif result is None or not result.rows:
-        state = "empty_result"
-
-    store.audit(
-        AuditRecord(
-            dataset_id=dataset_id,
-            at=datetime.now(UTC),
-            action="question",
-            provider=service.provider_name,
-            model=service.provider.model,
-            prompt_version=prompt_ref,
-            sampled=session.overview.sampled,
-            detail=(f"quick_ask={body.quick_ask_id} " if body.quick_ask_id else "") + body.question[:250],
+        answer, llm_answered, prompt_ref = service.answer(
+            question=body.question, result=result, anomalies=session.anomalies
         )
-    )
-    store.save_usage(dataset_id)
-    return QuestionResponse(
-        question=body.question,
-        plan=plan,
-        result=result,
-        chart=chart,
-        answer=answer,
-        llm_used=llm_planned or llm_answered,
-        provider=service.provider_name,
-        prompt_version=prompt_ref,
-        dataset_id=dataset_id,
-        quick_ask_id=body.quick_ask_id,
-        client_request_id=body.client_request_id,
-        state=state,  # type: ignore[arg-type]
-    )
+        if plan_note:
+            answer.caveats.append(plan_note)
+        if plan.clarification_needed:
+            answer.caveats.append(f"Clarification needed: {plan.clarification_needed}")
+
+        chart = None
+        if result is not None and result.rows and (quick_ask is None or quick_ask.intent.kind != "drivers"):
+            from ...core.query_plan import chart_for_plan
+
+            chart = chart_for_plan(plan, session.semantics)
+
+        state: str = "answered"
+        if plan.clarification_needed:
+            state = "clarification_required"
+        elif result is None or not result.rows:
+            state = "empty_result"
+
+        qlog.set(
+            state=state,
+            plan_note=plan_note,
+            executed_plan=plan,
+            result=result_summary(result),
+            answer=answer,
+            answered_by="llm" if llm_answered else "rules",
+            prompt_version=prompt_ref,
+            chart=chart,
+        )
+        store.audit(
+            AuditRecord(
+                dataset_id=dataset_id,
+                at=datetime.now(UTC),
+                action="question",
+                provider=service.provider_name,
+                model=service.provider.model,
+                prompt_version=prompt_ref,
+                sampled=session.overview.sampled,
+                detail=(f"quick_ask={body.quick_ask_id} " if body.quick_ask_id else "") + body.question[:250],
+            )
+        )
+        store.save_usage(dataset_id)
+        return QuestionResponse(
+            question=body.question,
+            plan=plan,
+            result=result,
+            chart=chart,
+            answer=answer,
+            llm_used=llm_planned or llm_answered,
+            provider=service.provider_name,
+            prompt_version=prompt_ref,
+            dataset_id=dataset_id,
+            quick_ask_id=body.quick_ask_id,
+            client_request_id=body.client_request_id,
+            state=state,  # type: ignore[arg-type]
+        )
 
 
 @router.post("/datasets/{dataset_id}/plan", response_model=PlanResult)
 def run_plan(dataset_id: str, request: Request, plan: AnalysisPlan) -> PlanResult:
-    session = _session(dataset_id, request)
-    try:
-        return execute_plan(session.df, plan, session.semantics)
-    except PlanError as exc:
-        raise _fail(400, "invalid_plan", str(exc), request) from exc
+    with logged("plan", dataset_id, request) as qlog:
+        qlog.set(proposed_plan=plan)
+        session = _session(dataset_id, request)
+        try:
+            result = execute_plan(session.df, plan, session.semantics)
+            qlog.set(executed_plan=result.plan, result=result_summary(result))
+            return result
+        except PlanError as exc:
+            raise _fail(400, "invalid_plan", str(exc), request) from exc
 
 
 # --------------------------------------------------------------------------- #

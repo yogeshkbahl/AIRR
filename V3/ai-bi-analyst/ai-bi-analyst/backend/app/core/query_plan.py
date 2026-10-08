@@ -44,7 +44,13 @@ NUMERIC_ROLES = {AnalyticalRole.measure, AnalyticalRole.currency, AnalyticalRole
 
 
 class PlanError(ValueError):
-    """A plan that cannot be executed safely. The message is user-facing."""
+    """A plan that cannot be executed safely. The message is user-facing;
+    ``detail`` and ``sql`` carry the engine's own error for the debug log."""
+
+    def __init__(self, message: str, *, detail: str | None = None, sql: str | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail
+        self.sql = sql
 
 
 def _q(identifier: str) -> str:
@@ -100,13 +106,18 @@ def validate_plan(plan: AnalysisPlan, semantics: list[ColumnSemantics]) -> Analy
         col = resolve(f.column, "Filter column")
         filters.append(QueryFilter(column=col, op=f.op, value=f.value))
 
+    # ORDER BY runs after GROUP BY, so it may only name an output column: a
+    # dimension or a metric's label. A model often names the raw source column
+    # instead ("total_purchases" rather than "sum of Total Purchases"), which
+    # DuckDB rejects with a BinderException, so map it to the output it means.
     sort_by = plan.sort_by
     if sort_by:
-        known = {m.label for m in metrics} | {_alias(m.label or "") for m in metrics} | set(dims)
-        if sort_by not in known and sort_by.lower() in lower:
-            sort_by = lower[sort_by.lower()]
-        elif sort_by not in known and metrics:
-            sort_by = metrics[0].label
+        by_output = {m.label: m.label for m in metrics} | {d: d for d in dims[:4]}
+        for m in metrics:
+            by_output.setdefault(_alias(m.label or ""), m.label)
+            by_output.setdefault(m.column, m.label)
+        folded = {key.lower(): value for key, value in by_output.items() if key}
+        sort_by = by_output.get(sort_by) or folded.get(sort_by.lower()) or (metrics[0].label if metrics else None)
 
     if not metrics and not dims and not time_dim:
         raise PlanError("The plan has no metrics and no dimensions, so there is nothing to compute.")
@@ -213,7 +224,7 @@ def _run_sql(df: pd.DataFrame, sql: str, params: list[Any]) -> pd.DataFrame:
     except duckdb.InterruptException as exc:  # pragma: no cover - timing dependent
         raise PlanError(f"The query exceeded the {settings.query_timeout_seconds}s limit and was cancelled.") from exc
     except duckdb.Error as exc:
-        raise PlanError(f"The query could not be executed: {type(exc).__name__}.") from exc
+        raise PlanError(f"The query could not be executed: {type(exc).__name__}.", detail=str(exc), sql=sql) from exc
     finally:
         if timer:
             timer.cancel()

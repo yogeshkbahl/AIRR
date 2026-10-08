@@ -135,7 +135,7 @@ JSON shape:
 
 ANALYSIS_PLAN = Prompt(
     id="analysis_plan",
-    version="1.2",
+    version="1.4",
     system=SYSTEM_GOVERNED_ADVISOR,
     template="""Task: turn a business question into a governed analysis plan. You do not write SQL.
 
@@ -144,6 +144,8 @@ Available columns (exact names, roles and default aggregations):
 
 Columns the user pre-selected (prefer these when relevant): {selected}
 
+Row grain: {grain}
+
 Question:
 {question}
 
@@ -151,7 +153,17 @@ Rules:
 - Use only listed column names.
 - `time_dimension` must be a datetime_dimension column, or null.
 - `time_grain` is one of day, week, month, quarter, year, or null.
-- Ask for clarification only if the answer would materially change; put it in `clarification_needed`.
+- When the user pre-selected columns, build the plan from them: measures become metrics with their
+  default aggregation, a datetime column becomes `time_dimension` at a sensible grain, and categories
+  become `dimensions` (at most two). Record any choice you made in `assumptions` instead of asking.
+- Choose each aggregation for the comparison being made, not just the default. When rows are one
+  per entity (see row grain), a measure is that entity's attribute (income, age, a per-customer
+  total, a score), so comparing groups uses `avg` (or `median` for skewed money), never `sum`:
+  a sum mostly reflects group size. Use `sum` only for additive amounts where the group total is
+  the question. Add `count_distinct` of the entity key when group size matters.
+- When the question is open-ended ("good insight", "what stands out"), plan the comparison that
+  explains the most: averages per group of every selected measure, plus group size.
+- Ask for clarification only if no reasonable plan exists; put it in `clarification_needed`.
 
 JSON shape:
 {{

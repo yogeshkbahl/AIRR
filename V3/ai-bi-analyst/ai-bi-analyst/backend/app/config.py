@@ -42,6 +42,16 @@ class Settings:
     preview_row_limit: int = field(default_factory=lambda: _int("PREVIEW_ROW_LIMIT", 50))
     query_row_limit: int = field(default_factory=lambda: _int("QUERY_ROW_LIMIT", 5_000))
     query_timeout_seconds: int = field(default_factory=lambda: _int("QUERY_TIMEOUT_SECONDS", 30))
+    # One JSON file per question/query for debugging; rows only on request.
+    query_log_enabled: bool = field(default_factory=lambda: _bool("QUERY_LOG_ENABLED", True))
+    # Anchored to backend/, not the current directory, so the logs land in the
+    # same place however uvicorn was started.
+    query_log_dir: Path = field(
+        default_factory=lambda: Path(
+            os.getenv("QUERY_LOG_DIR", str(Path(__file__).resolve().parents[1] / "logs" / "queries"))
+        ).resolve()
+    )
+    query_log_include_rows: bool = field(default_factory=lambda: _bool("QUERY_LOG_INCLUDE_ROWS", False))
     session_retention_hours: int = field(default_factory=lambda: _int("SESSION_RETENTION_HOURS", 24))
 
     # Statistical thresholds (documented so every number in the UI is explainable).
@@ -74,6 +84,8 @@ class Settings:
     def ensure_dirs(self) -> None:
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_db.parent.mkdir(parents=True, exist_ok=True)
+        if self.query_log_enabled:
+            self.query_log_dir.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

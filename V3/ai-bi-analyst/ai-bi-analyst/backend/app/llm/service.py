@@ -142,6 +142,18 @@ def _columns_for_prompt(semantics: list[ColumnSemantics]) -> list[dict]:
     ]
 
 
+def _row_grain(semantics: list[ColumnSemantics], row_count: int | None) -> str:
+    """Name the entity a row represents, when a key is unique per row.
+
+    Without this the planner cannot tell a customer table from an order table,
+    and sums customer attributes such as income across a segment."""
+    if row_count:
+        for s in semantics:
+            if s.analytical_role == AnalyticalRole.identifier and s.distinct_count >= 0.99 * row_count:
+                return f"one row per {s.label} ('{s.name}' is unique per row), so measures are per-entity attributes"
+    return "unknown; rows may be transactions or entities"
+
+
 # --------------------------------------------------------------------------- #
 # Heuristic narrator (deterministic, always available)
 # --------------------------------------------------------------------------- #
@@ -400,7 +412,19 @@ def heuristic_recommendations(
 
 
 def heuristic_answer(question: str, result: PlanResult | None, anomalies: list[Anomaly]) -> ExecutiveAnswer:
-    if result is None or not result.rows:
+    if result is None:
+        # Nothing ran: the plan needs clarification or failed validation. Saying
+        # "no rows matched" here would blame the data for a planning problem.
+        return ExecutiveAnswer(
+            headline="The plan could not run yet",
+            summary="Nothing was computed because the plan needs clarification. Rephrase the question or "
+            "change the column selection using the note below.",
+            evidence=[],
+            caveats=[],
+            follow_up_questions=[],
+            evidence_kind=EvidenceKind.fact,
+        )
+    if not result.rows:
         return ExecutiveAnswer(
             headline="No rows matched the plan",
             summary="The plan executed but returned no data. Relax the filters or pick a different grain.",
@@ -742,7 +766,11 @@ class AnalystService:
     # ---------------- question answering ----------------
 
     def plan_for_question(
-        self, question: str, semantics: list[ColumnSemantics], selected: list[str]
+        self,
+        question: str,
+        semantics: list[ColumnSemantics],
+        selected: list[str],
+        row_count: int | None = None,
     ) -> tuple[AnalysisPlan, bool, str | None]:
         from ..core.query_plan import heuristic_plan
 
@@ -753,6 +781,7 @@ class AnalystService:
         user = prompt.template.format(
             columns=prompts.wrap_untrusted(_columns_for_prompt(semantics)),
             selected=", ".join(selected) or "(none)",
+            grain=_row_grain(semantics, row_count),
             question=prompts.wrap_untrusted(question),
         )
         try:

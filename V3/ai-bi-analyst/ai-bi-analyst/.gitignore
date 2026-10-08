@@ -21,3 +21,6 @@ test-results/
 .DS_Store
 .idea/
 .vscode/
+
+# Debug query logs
+logs/

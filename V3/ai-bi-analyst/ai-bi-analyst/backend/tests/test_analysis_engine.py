@@ -250,6 +250,22 @@ def test_plan_executes_and_reports_sql(session_obj):
     assert sum(r["Revenue"] for r in result.rows) > 0
 
 
+def test_sort_by_a_source_column_sorts_by_its_metric(session_obj):
+    # A model often sorts by the raw column, which is not an output after GROUP BY.
+    plan = AnalysisPlan(
+        intent="revenue by region",
+        metrics=[MetricSpec(column="revenue_amount", aggregation=Aggregation.sum, label="Revenue")],
+        dimensions=["region"],
+        sort_by="revenue_amount",
+        sort_desc=True,
+        limit=10,
+    )
+    result = execute_plan(session_obj.df, plan, session_obj.semantics)
+    assert result.plan.sort_by == "Revenue"
+    revenues = [r["Revenue"] for r in result.rows]
+    assert revenues == sorted(revenues, reverse=True)
+
+
 def test_plan_rejects_unknown_columns(session_obj):
     plan = AnalysisPlan(
         intent="bad",
