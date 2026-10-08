@@ -644,7 +644,7 @@ def chart_advice(
                     action="chart_advice",
                     provider=service.provider_name,
                     model=service.provider.model,
-                    prompt_version="chart_ranking@1.2",
+                    prompt_version="chart_ranking@1.3",
                     detail=f"selection {fingerprint}",
                 )
             )

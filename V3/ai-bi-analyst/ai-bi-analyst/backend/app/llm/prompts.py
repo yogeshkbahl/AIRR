@@ -103,7 +103,7 @@ JSON shape:
 
 CHART_RANKING = Prompt(
     id="chart_ranking",
-    version="1.2",
+    version="1.3",
     system=SYSTEM_GOVERNED_ADVISOR,
     template="""Task: rank chart options that have already been validated as technically compatible.
 
@@ -117,6 +117,13 @@ Validated options (you may not add to this list, and you may not mark any as inv
 {options}
 
 Return every option exactly once, ordered best first for the stated question and audience.
+
+Rationale rules:
+- Refer only to the selected columns above, by label. Never name a column that is not listed.
+- Describe what the chart shows with these columns as they are. Do not claim the data contains
+  targets, thresholds, budgets, owners or prior periods; if the chart needs them, say so in "caution".
+- If a selected measure is not meaningful to sum (for example an age or an ID), say so in "caution".
+- Keep each rationale to one or two sentences, tied to the user question when one is given.
 
 JSON shape:
 {{"ranking": [{{"chart_type": str, "rank": int, "rationale": str, "caution": str}}]}}

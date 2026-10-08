@@ -570,7 +570,9 @@ class AnalystService:
                 chart_types=", ".join(CHART_TYPES),
             )
             try:
-                raw = self._call(prompt, user, action="recommendations", max_tokens=6000)
+                # A 12-idea reply runs ~5,500 tokens, so 6,000 cut it off intermittently.
+                # 8,000 leaves headroom and still finishes inside LLM_TIMEOUT_SECONDS.
+                raw = self._call(prompt, user, action="recommendations", max_tokens=8000)
                 interpretation = BusinessInterpretation.model_validate(raw.get("interpretation", {}))
                 recs, rejected, notes = self._validate_recommendations(
                     raw.get("recommendations", []), semantics, overview

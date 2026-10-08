@@ -48,7 +48,8 @@ export default function AskDataPage({ datasetId }: { datasetId: string }) {
   const [showSql, setShowSql] = useState(false)
   const [lastSubmission, setLastSubmission] = useState<Submission | null>(null)
   const latestToken = useRef<string>('')
-  const { addInsight } = useStoryboard(datasetId)
+  const { addInsight, isSaving } = useStoryboard(datasetId)
+  const [answerAdded, setAnswerAdded] = useState<string | null>(null)
 
   const profile = useQuery({
     queryKey: ['columns', datasetId],
@@ -273,15 +274,18 @@ export default function AskDataPage({ datasetId }: { datasetId: string }) {
 
               <Button
                 sx={{ mt: 2 }}
-                onClick={() =>
-                  addInsight(
+                variant="outlined"
+                disabled={isSaving || answerAdded === (result.client_request_id ?? result.answer.headline)}
+                onClick={async () => {
+                  await addInsight(
                     result.answer.headline,
                     `${result.answer.summary} ${result.answer.evidence.join(' ')}`,
                     result.answer.evidence_kind,
                   )
-                }
+                  setAnswerAdded(result.client_request_id ?? result.answer.headline)
+                }}
               >
-                Add this answer to the storyboard
+                {answerAdded === (result.client_request_id ?? result.answer.headline) ? 'Answer is on the storyboard' : 'Add answer to storyboard'}
               </Button>
             </Paper>
 

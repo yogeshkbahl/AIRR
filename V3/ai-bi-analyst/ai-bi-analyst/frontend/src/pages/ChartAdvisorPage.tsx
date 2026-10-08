@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   Alert, Autocomplete, Box, Button, Chip, Grid, List, ListItemButton, ListItemText, Paper, Stack,
@@ -43,16 +43,25 @@ export default function ChartAdvisorPage({ datasetId }: { datasetId: string }) {
   )
   const fingerprint = selectionFingerprint(datasetId, selection.ids)
 
+  // The question shapes the ranking, so it must be part of the query key or a
+  // new question would just return the cached answer for the old one. Debounce
+  // it so typing does not fire a request per keystroke.
+  const [question, setQuestion] = useState(chartAdvisor.question.trim())
+  useEffect(() => {
+    const handle = window.setTimeout(() => setQuestion(chartAdvisor.question.trim()), 600)
+    return () => window.clearTimeout(handle)
+  }, [chartAdvisor.question])
+
   const advice = useQuery({
     // The fingerprint is part of the key, so changing the selection starts a
     // new request and the previous one can no longer resolve into this state.
-    queryKey: ['chart-advice', datasetId, fingerprint, provider],
+    queryKey: ['chart-advice', datasetId, fingerprint, provider, question],
     queryFn: ({ signal }) =>
       api.chartAdvice(
         datasetId,
         {
           columns: selection.ids,
-          question: chartAdvisor.question || undefined,
+          question: question || undefined,
           use_llm: true,
           selection_fingerprint: fingerprint,
         },

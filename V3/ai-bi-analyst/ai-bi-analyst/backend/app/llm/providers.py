@@ -85,6 +85,15 @@ def extract_json(text: str) -> dict[str, Any]:
     raise LLMError("The model returned no JSON object.")
 
 
+def _cut_off(label: str, max_tokens: int) -> LLMError:
+    """A reply stopped at the output limit is half a JSON document.
+
+    Said plainly, and worded without "JSON" so the service does not spend a
+    repair attempt re-asking for a reply that will stop at the same limit.
+    """
+    return LLMError(f"{label} reached the {max_tokens:,}-token output limit before finishing the reply.")
+
+
 def _post_with_retry(url: str, *, headers: dict[str, str], payload: dict[str, Any], label: str) -> dict[str, Any]:
     """One place for timeouts, rate-limit backoff and error shaping."""
     last: LLMError | None = None
@@ -152,6 +161,8 @@ class OpenAIProvider(LLMProvider):
             payload=payload,
             label="OpenAI",
         )
+        if data["choices"][0].get("finish_reason") == "length":
+            raise _cut_off("OpenAI", max_tokens)
         usage, reported_model = extract_openai_usage(data)
         return LLMResult(
             data=extract_json(data["choices"][0]["message"]["content"]),
@@ -196,6 +207,8 @@ class AnthropicProvider(LLMProvider):
             payload=payload,
             label="Anthropic",
         )
+        if data.get("stop_reason") == "max_tokens":
+            raise _cut_off("Anthropic", max_tokens)
         text = "".join(block.get("text", "") for block in data.get("content", []) if block.get("type") == "text")
         usage, reported_model = extract_anthropic_usage(data)
         return LLMResult(

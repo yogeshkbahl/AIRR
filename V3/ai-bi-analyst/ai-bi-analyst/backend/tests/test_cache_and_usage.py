@@ -314,3 +314,25 @@ def test_usage_records_never_carry_prompts_or_keys():
     payload = record.model_dump_json()
     for forbidden in ("api_key", "authorization", "sk-", "system", "prompt_text"):
         assert forbidden not in payload
+
+
+def test_reply_cut_off_at_the_output_limit_is_reported_plainly(monkeypatch):
+    """A truncated reply is half a JSON document; say so rather than blame the JSON."""
+    from app.llm import providers
+    from app.llm.providers import AnthropicProvider, LLMError, OpenAIProvider
+
+    anthropic_reply = {
+        "stop_reason": "max_tokens",
+        "content": [{"type": "text", "text": '{"recommendations": [{"title": "Rev'}],
+        "usage": {"input_tokens": 10, "output_tokens": 8000},
+    }
+    monkeypatch.setattr(providers, "_post_with_retry", lambda url, **kw: anthropic_reply)
+    with pytest.raises(LLMError) as caught:
+        AnthropicProvider(api_key="test-key").complete_json("system", "user", max_tokens=8000)
+    assert "8,000-token output limit" in str(caught.value)
+    assert "JSON" not in str(caught.value)  # so the service does not re-ask at the same limit
+
+    openai_reply = {"choices": [{"finish_reason": "length", "message": {"content": '{"a": '}}]}
+    monkeypatch.setattr(providers, "_post_with_retry", lambda url, **kw: openai_reply)
+    with pytest.raises(LLMError, match="output limit"):
+        OpenAIProvider(api_key="test-key").complete_json("system", "user", max_tokens=100)

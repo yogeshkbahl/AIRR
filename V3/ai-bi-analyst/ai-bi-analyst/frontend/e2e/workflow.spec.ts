@@ -34,7 +34,7 @@ test.describe('end to end discovery workflow', () => {
     await columnPicker.fill('Region')
     await page.getByRole('option').first().click()
     await expect(page.getByText('Valid for this selection')).toBeVisible()
-    await page.getByRole('button', { name: 'Pin' }).click()
+    await page.getByRole('button', { name: 'Add to storyboard' }).click()
     await expect(page.getByRole('button', { name: 'Added' })).toBeVisible()
 
     await page.getByRole('link', { name: /Ask the data/ }).click()

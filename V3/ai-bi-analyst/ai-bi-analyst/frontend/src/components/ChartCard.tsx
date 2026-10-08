@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Box, Button, Card, CardContent, Chip, Collapse, Divider, Stack, Tooltip, Typography } from '@mui/material'
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined'
@@ -25,6 +25,8 @@ export default function ChartCard({
   const [showSpec, setShowSpec] = useState(defaultOpenSpec)
   const [pinned, setPinned] = useState(false)
   const { addChart, isSaving } = useStoryboard(datasetId)
+  // A new spec is a different chart, so it has not been added yet.
+  useEffect(() => setPinned(false), [spec])
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['chart-data', datasetId, spec],
@@ -60,7 +62,7 @@ export default function ChartCard({
                     setPinned(true)
                   }}
                 >
-                  {pinned ? 'Added' : 'Pin'}
+                  {pinned ? 'On the storyboard' : 'Add to storyboard'}
                 </Button>
               </Tooltip>
             )}
